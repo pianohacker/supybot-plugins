@@ -108,7 +108,7 @@ class Later(callbacks.Plugin):
         nick = re.sub(r"[^0-9A-Za-z^_`{|}-]", "", nick)
 
         if self.registryValue('aggressivelyTrimSuffixes'):
-            nick = re.sub(r"[_-].*$", "", nick)
+            nick = re.sub(r"[_-|].*$", "", nick)
 
         if self.registryValue('suffixesToRemove'):
             nick = re.sub('(' + '|'.join(self.registryValue('suffixesToRemove')) + ')$', '', nick)
