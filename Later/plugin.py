@@ -129,7 +129,7 @@ class Later(callbacks.Plugin):
             return
         try:
             self._addNote(nick, msg.nick, text)
-            irc.replySuccess('' if nick == origNick else 'Corrected nick to "{}".'.format(nick))
+            irc.replySuccess('' if nick == origNick else 'Corrected nick to "{0}".'.format(nick))
         except ValueError:
             irc.error('That person\'s message queue is already full.')
     tell = wrap(tell, ['something', 'text'])
