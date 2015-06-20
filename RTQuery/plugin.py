@@ -46,7 +46,7 @@ class RTQuery(callbacks.PluginRegexp):
     """Add the help for "@plugin help RTQuery" here
     This should describe *how* to use this plugin."""
     threaded = True
-    regexps = ['snarfRT']
+    regexps = ['snarfRT', 'snarfRTUrl']
 
     def __init__(self, irc):
         super(RTQuery, self).__init__(irc)
@@ -132,6 +132,18 @@ class RTQuery(callbacks.PluginRegexp):
 
         ids = [id for id in match.group('id').split() if self._shouldSay(channel, id)]
         self.log.debug('Snarfed RT ID(s): ' + match.group('id') + ', saying ' + ' '.join(ids))
+
+        for id in ids:
+            desc = self._getTicketDesc(irc, id)
+            if desc: irc.reply(desc, prefixNick=False)
+
+    def snarfRTUrl(self, irc, msg, match):
+        r"(?P<url>https?://\S+/)Ticket/Display.html\?id=(?P<id>\w+)"
+        channel = msg.args[0]
+        if (not self.registryValue('ticketSnarfer', channel)): return
+
+        ids = [id for id in match.group('id').split() if self._shouldSay(channel, id)]
+        self.log.debug('Snarfed RT ID(s) from URL: ' + match.group('id') + ', saying ' + ' '.join(ids))
 
         for id in ids:
             desc = self._getTicketDesc(irc, id)
