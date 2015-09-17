@@ -34,6 +34,7 @@ import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
 
 import cookielib
+import re
 import urllib
 import urllib2
 from urlparse import urljoin
@@ -53,9 +54,10 @@ class RTQuery(callbacks.PluginRegexp):
 
         self.sayTimeouts = {}
 
-    def _getTicketDesc(self, irc, ticketno):
+    def _get(self, irc, rest_uri, fail_silently = False):
         base_uri = self.registryValue('uri')
-        rest_uri = urljoin(base_uri, "REST/1.0/ticket/{0}".format(ticketno))
+        rest_uri = urljoin(base_uri, "REST/1.0/{0}".format(rest_uri))
+
         if self.registryValue('authtype').lower() == 'basic':
             auth_handler = urllib2.HTTPBasicAuthHandler()
             auth_handler.add_password(self.registryValue('authRealm'),
@@ -77,38 +79,60 @@ class RTQuery(callbacks.PluginRegexp):
             return
         try:
             response = opener.open(login)
-            tkt_attrs = self.__parse_rt_response(response)
+            return self.__parse_rt_response(response)
         except urllib2.HTTPError as e:
             self.log.error('GET on URI {uri} yielded HTTP {code} {msg}'.format(
                     uri=rest_uri, code=e.code, msg=e.msg))
-            irc.error('failed to retrieve ticket data')
+            if not fail_silently: irc.error('failed to retrieve ticket data')
             return
         except RTError as e:
-            irc.error(e.value)
+            self.log.error('RT error: {0}'.format(e))
+            if not fail_silently: irc.error(e.value)
             return
+
+    def _getRequestorInfo(self, irc, requestor):
+        user_attrs = self._get(irc, 'user/{0}'.format(requestor.split(',')[0]), fail_silently = True) 
+
+        short_requestor = re.sub(r'@.*', '', requestor)
+
+        return user_attrs.get('Organization', short_requestor) if user_attrs else short_requestor
+
+    def _getTicketDesc(self, irc, ticketno, show_uri = True):
+        base_uri = self.registryValue('uri')
+        tkt_attrs = self._get(irc, "ticket/{0}".format(ticketno))
+        if tkt_attrs is None: return
 
         # The "id" field for a ticket looks like "ticket/123"
         real_tkt_id = tkt_attrs['id'].split('/')[1]
 
         msg_bits = ['Ticket']
-        tkt_flags = []
         if str(ticketno) != real_tkt_id:
             msg_bits.append('*' + real_tkt_id)
         else:
             msg_bits.append(real_tkt_id)
+
+        tkt_flags = []
         if tkt_attrs.get('Status'):
             tkt_flags.append(tkt_attrs['Status'])
         if tkt_attrs.get('CF.{Security}', '').lower() == 'yes':
             tkt_flags.append('security')
         if tkt_attrs.get('CF.{Security Threat}'):
             tkt_flags.append('threat=' + tkt_attrs['CF.{Security Threat}'])
+
         if tkt_flags:
             msg_bits.append('(' + ', '.join(tkt_flags) + ')')
+
         msg_bits[-1] += ':'
+
         msg_bits.append(tkt_attrs.get('Subject', '(no subject)'))
-        msg_bits.append('-')
-        msg_bits.append(urljoin(base_uri,
-                'Ticket/Display.html?id={0}'.format(real_tkt_id)))
+
+        msg_bits.append('[' + (tkt_attrs.get('Requestors').split(',')[0] or 'Nobody') + '->' + re.sub(r'@.*', '', tkt_attrs.get('Owner', 'Nobody')) + ']')
+
+        if show_uri:
+            msg_bits.append('-')
+            msg_bits.append(urljoin(base_uri,
+                    'Ticket/Display.html?id={0}'.format(real_tkt_id)))
+
         return ' '.join(msg_bits)
 
     def _shouldSay(self, channel, id):
@@ -146,7 +170,7 @@ class RTQuery(callbacks.PluginRegexp):
         self.log.debug('Snarfed RT ID(s) from URL: ' + match.group('id') + ', saying ' + ' '.join(ids))
 
         for id in ids:
-            desc = self._getTicketDesc(irc, id)
+            desc = self._getTicketDesc(irc, id, show_uri = False)
             if desc: irc.reply(desc, prefixNick=False)
 
     def getticket(self, irc, msg, args, ticketno):
